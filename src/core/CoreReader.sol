@@ -39,11 +39,19 @@ library CoreReader {
         uint64 ask;
     }
 
+    /// @dev Reverting here aborts any loop that calls it, which is intended. A
+    /// precompile failure is systemic — it means this chain is not HyperEVM, or
+    /// the precompile set changed — not something wrong with one account. A
+    /// per-item `continue` would let a whole sampling pass silently accrue
+    /// nothing, which is the failure this library exists to prevent.
+    // forge-lint: disable-next-line(require-revert-in-loop)
     function _read(address precompile, bytes memory input) private view returns (bytes memory) {
         (bool ok, bytes memory out) = precompile.staticcall(input);
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (!ok) revert PrecompileFailed(precompile);
         // An address with no code returns ok with zero bytes. That is the
         // "not actually on HyperEVM" case, and it must not read as zeros.
+        // forge-lint: disable-next-line(require-revert-in-loop)
         if (out.length == 0) revert PrecompileEmpty(precompile);
         return out;
     }
