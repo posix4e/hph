@@ -23,17 +23,19 @@ sent to the exchange endpoint — it is not something the deployment transaction
 do for itself. A deploy attempted without it does not fail informatively; it
 simply cannot be included.
 
-### This is an argument for cloning, not for bigger blocks
+### Only the implementation needs them — campaigns are clones
 
-One campaign per deployment at ~1.9M gas does not scale, and it puts every launch
-within 5% of a hard limit. The fix is the `JobFactory` the design already calls
-for, deploying **EIP-1167 minimal proxies** — roughly 45 bytes each, a few tens of
-thousands of gas, comfortably inside a small block.
+This is why `JobFactory` deploys **EIP-1167 minimal proxies** rather than whole
+campaigns. Launching a campaign measures well under a quarter of a small block
+(asserted in `test/unit/Factory.t.sol`), so a requester posting a job never has
+to know that block sizes exist.
 
-The cost is that clones cannot use `immutable`, so per-campaign configuration
-moves to storage: slightly more expensive to read, and initialised rather than
-constructed. That is the right trade for a contract meant to be deployed
-repeatedly, and it should land before any campaign is launched in anger.
+Big blocks are therefore needed **once**, to deploy the `Campaign` implementation
+and the factory. After that, toggle them back off.
+
+The cost of cloning is that per-campaign configuration lives in storage rather
+than `immutable`, and campaigns are initialised rather than constructed —
+slightly more expensive to read, and worth it for something deployed repeatedly.
 
 ## Deploying
 

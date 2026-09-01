@@ -28,14 +28,14 @@ import {CoreReader} from "./core/CoreReader.sol";
 abstract contract Settlement {
     using SafeERC20 for IERC20;
 
-    IERC20 public immutable payoutToken;
+    IERC20 public payoutToken;
     /// HyperCore's index for `payoutToken`.
-    uint64 public immutable coreToken;
+    uint64 public coreToken;
     /// Divisor converting an ERC-20 amount into Core wei units.
     /// @dev Must equal `10 ** (erc20Decimals - tokenInfo(coreToken).weiDecimals)`.
     /// Set once at construction and asserted non-zero; a wrong value misdelivers
     /// by orders of magnitude, so it is never inferred at runtime.
-    uint256 public immutable coreUnitDivisor;
+    uint256 public coreUnitDivisor;
 
     uint256 public pool;
     bool public settled;
@@ -55,7 +55,13 @@ abstract contract Settlement {
     event DeliveredToCore(address indexed worker, uint256 amount);
     event ClaimedOnEvm(address indexed worker, uint256 amount);
 
-    constructor(IERC20 payoutToken_, uint64 coreToken_, uint256 coreUnitDivisor_) {
+    /// @dev Storage rather than immutable, and initialised rather than
+    /// constructed, so campaigns can be EIP-1167 clones. A constructor's
+    /// immutables live in the implementation's code and would be identical for
+    /// every clone, which is exactly wrong for per-campaign configuration.
+    function _initSettlement(IERC20 payoutToken_, uint64 coreToken_, uint256 coreUnitDivisor_)
+        internal
+    {
         require(address(payoutToken_) != address(0), "no token");
         require(coreUnitDivisor_ != 0, "no divisor");
         payoutToken = payoutToken_;

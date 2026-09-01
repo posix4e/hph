@@ -3,8 +3,6 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {Campaign} from "../../src/Campaign.sol";
-import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {TestToken} from "./TestToken.sol";
 
 /// The cross-implementation vector for signed work actions.
 ///
@@ -25,9 +23,7 @@ contract Eip712VectorTest is Test {
     function test_registrationDigestMatchesTheCrossLanguageVector() public {
         vm.chainId(CHAIN_ID);
 
-        TestToken token = new TestToken();
-        Campaign impl =
-            new Campaign(3, IERC20(address(token)), 7, 1, 1_000_000, 2_000_000, address(this));
+        Campaign impl = new Campaign();
         // Place the campaign at a fixed address so `verifyingContract` — part of
         // the domain, and therefore part of the digest — is pinned too.
         vm.etch(VERIFYING_CONTRACT, address(impl).code);

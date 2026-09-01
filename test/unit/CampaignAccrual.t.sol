@@ -6,6 +6,7 @@ import {Campaign} from "../../src/Campaign.sol";
 import {CoreReader} from "../../src/core/CoreReader.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {TestToken} from "./TestToken.sol";
+import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
 /// UNIT tests for the accrual arithmetic.
 ///
@@ -28,9 +29,16 @@ contract CampaignAccrualTest is Test {
     uint64 constant TOKEN = 7;
     uint32 constant ASSET = 3;
 
+    /// Campaigns are clones in production, so tests build them the same way:
+    /// deploy the implementation once, clone, initialise.
+    function _harness(TestToken tok, address requester) internal returns (Harness h) {
+        h = Harness(Clones.clone(address(new Harness())));
+        h.initialize(ASSET, IERC20(address(tok)), TOKEN, 1, START, END, requester);
+    }
+
     function setUp() public {
         token = new TestToken();
-        campaign = new Harness(ASSET, token, TOKEN, START, END, address(this));
+        campaign = _harness(token, address(this));
         campaign.register(ALICE);
         campaign.register(BOB);
         _mockBbo(100, 101);
@@ -117,7 +125,7 @@ contract CampaignAccrualTest is Test {
         // forge-lint: disable-end(calls-loop)
         uint256 sampledEverySecond = campaign.committed(ALICE);
 
-        Harness sparse = new Harness(ASSET, token, TOKEN, START, END, address(this));
+        Harness sparse = _harness(token, address(this));
         sparse.register(ALICE);
         vm.warp(START);
         sparse.sample();
@@ -149,10 +157,6 @@ contract CampaignAccrualTest is Test {
 
 /// Exposes the internal registration path; the real route is a signature batch.
 contract Harness is Campaign {
-    constructor(uint32 a, IERC20 tok, uint64 t, uint64 s, uint64 e, address r)
-        Campaign(a, tok, t, 1, s, e, r)
-    {}
-
     function register(address worker) external {
         _register(worker);
     }

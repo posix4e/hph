@@ -33,10 +33,13 @@ contract Campaign is SignedActions, Settlement {
     /// sampling more often only improves accuracy — it never inflates a score.
     uint64 public constant MAX_GAP = 5 minutes;
 
-    uint32 public immutable asset;
-    uint64 public immutable windowStart;
-    uint64 public immutable windowEnd;
-    address public immutable requester;
+    uint32 public asset;
+    uint64 public windowStart;
+    uint64 public windowEnd;
+    address public requester;
+
+    /// Guards `initialize` against being called twice on a clone.
+    bool private _initialized;
 
     /// Time-weighted committed capital, in `hold` units times seconds.
     mapping(address => uint256) public committed;
@@ -58,7 +61,14 @@ contract Campaign is SignedActions, Settlement {
     event Sampled(uint64 at, uint32 count, uint64 bid, uint64 ask);
     event Settled(uint256 totalCommitted, uint256 median);
 
-    constructor(
+    error AlreadyInitialized();
+
+    /// @notice Configure a freshly cloned campaign.
+    /// @dev Called once by `JobFactory` immediately after cloning, in the same
+    /// transaction, so there is no window in which an uninitialised clone is
+    /// reachable. The guard is belt-and-braces against a clone deployed by
+    /// anything else.
+    function initialize(
         uint32 asset_,
         IERC20 payoutToken_,
         uint64 coreToken_,
@@ -66,13 +76,17 @@ contract Campaign is SignedActions, Settlement {
         uint64 windowStart_,
         uint64 windowEnd_,
         address requester_
-    ) Settlement(payoutToken_, coreToken_, coreUnitDivisor_) {
+    ) external {
+        if (_initialized) revert AlreadyInitialized();
+        _initialized = true;
+
         require(windowEnd_ > windowStart_, "empty window");
         require(requester_ != address(0), "no requester");
         asset = asset_;
         windowStart = windowStart_;
         windowEnd = windowEnd_;
         requester = requester_;
+        _initSettlement(payoutToken_, coreToken_, coreUnitDivisor_);
     }
 
     /// @notice Close the job and turn committed capital into credits.

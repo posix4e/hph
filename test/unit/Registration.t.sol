@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {Campaign} from "../../src/Campaign.sol";
 import {SignedActions} from "../../src/SignedActions.sol";
 import {TestToken} from "./TestToken.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {Clones} from "openzeppelin-contracts/contracts/proxy/Clones.sol";
 
 /// UNIT tests for signature-gated registration.
 ///
@@ -24,11 +26,17 @@ contract RegistrationTest is Test {
     uint64 constant START = 1_000_000;
     uint64 constant END = START + 1 days;
 
+    /// Campaigns are clones in production; tests build them the same way.
+    function _campaign(address requester) internal returns (Campaign c) {
+        c = Campaign(Clones.clone(address(new Campaign())));
+        c.initialize(3, IERC20(address(token)), 7, 1, START, END, requester);
+    }
+
     function setUp() public {
         alice = vm.addr(ALICE_PK);
         bob = vm.addr(BOB_PK);
         token = new TestToken();
-        campaign = new Campaign(3, token, 7, 1, START, END, address(this));
+        campaign = _campaign(address(this));
         vm.warp(START);
     }
 
@@ -110,7 +118,7 @@ contract RegistrationTest is Test {
     function test_signatureDoesNotReplayToAnotherCampaign() public {
         SignedActions.SignedRegistration memory r = _sign(ALICE_PK, alice, 0);
 
-        Campaign other = new Campaign(3, token, 7, 1, START, END, address(this));
+        Campaign other = _campaign(address(this));
         other.registerBatch(_one(r));
 
         assertFalse(other.registered(alice), "domain separation holds");

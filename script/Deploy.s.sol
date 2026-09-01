@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {Campaign} from "../src/Campaign.sol";
+import {JobFactory} from "../src/JobFactory.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 /// Deploys one measurement-validated campaign.
@@ -37,10 +38,14 @@ contract Deploy is Script {
         uint64 end = start + windowSeconds;
 
         vm.startBroadcast();
-        Campaign campaign =
-            new Campaign(asset, IERC20(token), coreToken, divisor, start, end, msg.sender);
+        // The only deployment that needs big blocks. Everything after is a clone.
+        Campaign implementation = new Campaign();
+        JobFactory factory = new JobFactory(address(implementation));
+        Campaign campaign = factory.launch(asset, IERC20(token), coreToken, divisor, start, end);
         vm.stopBroadcast();
 
+        console.log("implementation", address(implementation));
+        console.log("factory", address(factory));
         console.log("campaign", address(campaign));
         console.log("window", start, "to", end);
     }
