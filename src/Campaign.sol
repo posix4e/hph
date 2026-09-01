@@ -3,6 +3,8 @@ pragma solidity ^0.8.30;
 
 import {CoreReader} from "./core/CoreReader.sol";
 import {SignedActions} from "./SignedActions.sol";
+import {Settlement} from "./Settlement.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 /// @notice A measurement-validated job: pays for capital committed to a market
 /// over a window, scored from state the contract reads itself.
@@ -17,7 +19,7 @@ import {SignedActions} from "./SignedActions.sol";
 /// level of those orders, so a worker resting far from mid scores like a worker
 /// quoting tightly. That gap is real and deliberately unclosed here; closing it
 /// needs either a reporter or volume-based rewards, and both are worse.
-contract Campaign is SignedActions {
+contract Campaign is SignedActions, Settlement {
     /// Samples are taken by whoever bothers, so the accrual rule must not reward
     /// *when* you sample. Two properties make that true:
     ///
@@ -32,7 +34,6 @@ contract Campaign is SignedActions {
     uint64 public constant MAX_GAP = 5 minutes;
 
     uint32 public immutable asset;
-    uint64 public immutable coreToken;
     uint64 public immutable windowStart;
     uint64 public immutable windowEnd;
     address public immutable requester;
@@ -45,6 +46,8 @@ contract Campaign is SignedActions {
     address[] public workers;
     mapping(address => bool) public registered;
 
+    uint256 public medianAtSettlement;
+
     uint64 public lastSampleAt;
     uint32 public sampleCount;
 
@@ -53,21 +56,70 @@ contract Campaign is SignedActions {
 
     event Registered(address indexed worker);
     event Sampled(uint64 at, uint32 count, uint64 bid, uint64 ask);
+    event Settled(uint256 totalCommitted, uint256 median);
 
     constructor(
         uint32 asset_,
+        IERC20 payoutToken_,
         uint64 coreToken_,
+        uint256 coreUnitDivisor_,
         uint64 windowStart_,
         uint64 windowEnd_,
         address requester_
-    ) {
+    ) Settlement(payoutToken_, coreToken_, coreUnitDivisor_) {
         require(windowEnd_ > windowStart_, "empty window");
         require(requester_ != address(0), "no requester");
         asset = asset_;
-        coreToken = coreToken_;
         windowStart = windowStart_;
         windowEnd = windowEnd_;
         requester = requester_;
+    }
+
+    /// @notice Close the job and turn committed capital into credits.
+    /// @dev Callable by anyone once the window has passed. Nothing here consults
+    /// an operator, an oracle, or submitted data: every input was sampled by this
+    /// contract from the precompiles during the window.
+    ///
+    /// Payment is pro-rata by committed capital. The peer median is recorded
+    /// alongside it for reputation, which is where median-relative scoring
+    /// belongs; making the split itself median-relative would pay a bare majority
+    /// and strand everyone else, and that is a policy choice this job does not
+    /// need to make.
+    function settle() external {
+        if (settled) revert AlreadySettled();
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp <= windowEnd) revert NotInWindow();
+        settled = true;
+
+        uint256 n = workers.length;
+        uint256 total = 0;
+        for (uint256 i = 0; i < n; i++) {
+            total += committed[workers[i]];
+        }
+        medianAtSettlement = medianCommitted();
+
+        // Nobody committed anything: the pool is owed back, not stranded.
+        if (total == 0) {
+            _credit(requester, pool);
+            // forge-lint: disable-next-line(reentrancy-events)
+            emit Settled(0, 0);
+            return;
+        }
+
+        uint256 distributed = 0;
+        for (uint256 i = 0; i < n; i++) {
+            address w = workers[i];
+            uint256 share = (pool * committed[w]) / total;
+            distributed += share;
+            _credit(w, share);
+        }
+        // Integer division leaves dust. It returns to the requester rather than
+        // sitting in the contract forever with no claim on it.
+        _credit(requester, pool - distributed);
+        // Settlement moves no value; it only writes the credit ledger. Nothing
+        // external is called here, so log ordering cannot be manipulated.
+        // forge-lint: disable-next-line(reentrancy-events)
+        emit Settled(total, medianAtSettlement);
     }
 
     function workerCount() external view returns (uint256) {

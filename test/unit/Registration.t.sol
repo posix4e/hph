@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {Campaign} from "../../src/Campaign.sol";
 import {SignedActions} from "../../src/SignedActions.sol";
+import {TestToken} from "./TestToken.sol";
 
 /// UNIT tests for signature-gated registration.
 ///
@@ -13,6 +14,7 @@ import {SignedActions} from "../../src/SignedActions.sol";
 /// to break it for everyone else.
 contract RegistrationTest is Test {
     Campaign campaign;
+    TestToken token;
 
     uint256 constant ALICE_PK = 0xA11CE;
     uint256 constant BOB_PK = 0xB0B;
@@ -25,7 +27,8 @@ contract RegistrationTest is Test {
     function setUp() public {
         alice = vm.addr(ALICE_PK);
         bob = vm.addr(BOB_PK);
-        campaign = new Campaign(3, 7, START, END, address(this));
+        token = new TestToken();
+        campaign = new Campaign(3, token, 7, 1, START, END, address(this));
         vm.warp(START);
     }
 
@@ -70,6 +73,8 @@ contract RegistrationTest is Test {
         batch[2] = _sign(BOB_PK, bob, 0);
 
         vm.expectEmit(true, false, false, true);
+        // Declaring an expected event, not emitting one from a contract.
+        // forge-lint: disable-next-line(reentrancy-events)
         emit SignedActions.RegistrationRejected(alice, SignedActions.Reject.WrongSigner);
         campaign.registerBatch(batch);
 
@@ -105,7 +110,7 @@ contract RegistrationTest is Test {
     function test_signatureDoesNotReplayToAnotherCampaign() public {
         SignedActions.SignedRegistration memory r = _sign(ALICE_PK, alice, 0);
 
-        Campaign other = new Campaign(3, 7, START, END, address(this));
+        Campaign other = new Campaign(3, token, 7, 1, START, END, address(this));
         other.registerBatch(_one(r));
 
         assertFalse(other.registered(alice), "domain separation holds");
