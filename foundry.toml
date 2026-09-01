@@ -1,0 +1,22 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+solc = "0.8.30"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+# Escrow logic ships immutable, so a missed revert is unpatchable. Fail loudly.
+deny = "warnings"
+fs_permissions = [{ access = "read", path = "./docs/vectors" }]
+
+[profile.ci]
+verbosity = 3
+fuzz = { runs = 1024 }
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false
+int_types = "long"

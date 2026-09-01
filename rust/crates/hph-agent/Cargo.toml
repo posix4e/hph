@@ -1,0 +1,13 @@
+[package]
+name = "hph-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless worker: signs work actions, never sends a transaction."
+
+[dependencies]
+alloy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
