@@ -105,10 +105,12 @@ contract CampaignAccrualTest is Test {
         _mockHold(BOB, 100);
 
         campaign.sample();
+        // forge-lint: disable-start(calls-loop)
         for (uint64 t = 1; t <= 60; t++) {
             vm.warp(START + t);
             campaign.sample();
         }
+        // forge-lint: disable-end(calls-loop)
         uint256 sampledEverySecond = campaign.committed(ALICE);
 
         Harness sparse = new Harness(ASSET, TOKEN, START, END, address(this));

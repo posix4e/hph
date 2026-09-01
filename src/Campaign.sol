@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {CoreReader} from "./core/CoreReader.sol";
+import {SignedActions} from "./SignedActions.sol";
 
 /// @notice A measurement-validated job: pays for capital committed to a market
 /// over a window, scored from state the contract reads itself.
@@ -16,7 +17,7 @@ import {CoreReader} from "./core/CoreReader.sol";
 /// level of those orders, so a worker resting far from mid scores like a worker
 /// quoting tightly. That gap is real and deliberately unclosed here; closing it
 /// needs either a reporter or volume-based rewards, and both are worse.
-contract Campaign {
+contract Campaign is SignedActions {
     /// Samples are taken by whoever bothers, so the accrual rule must not reward
     /// *when* you sample. Two properties make that true:
     ///
@@ -48,7 +49,6 @@ contract Campaign {
     uint32 public sampleCount;
 
     error NotInWindow();
-    error AlreadyRegistered();
     error WindowClosed();
 
     event Registered(address indexed worker);
@@ -74,15 +74,32 @@ contract Campaign {
         return workers.length;
     }
 
-    /// @dev Registration is internal so the only route in is a verified signature
-    /// batch. A worker never sends a transaction.
-    function _register(address worker) internal {
-        // Timestamps gate a window measured in hours; a validator can nudge them
-        // by seconds. The skew is orders of magnitude below anything that
-        // changes a score, so it is accepted rather than engineered around.
+    /// @notice Admit workers from a batch of signatures they produced offline.
+    /// @dev Callable by anyone. Invalid entries are skipped and reported rather
+    /// than reverting: submission is permissionless, so a single planted bad
+    /// signature must not be able to block every honest worker in the batch.
+    function registerBatch(SignedRegistration[] calldata regs) external {
+        // Checked once, outside the loop: a closed window invalidates every
+        // entry equally, so reverting is correct and cannot be used to grief.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp >= windowEnd) revert WindowClosed();
-        if (registered[worker]) revert AlreadyRegistered();
+        uint256 n = regs.length;
+        for (uint256 i = 0; i < n; i++) {
+            SignedRegistration calldata r = regs[i];
+            Reject why = _checkRegistration(r);
+            if (why == Reject.None && registered[r.worker]) why = Reject.Duplicate;
+            if (why != Reject.None) {
+                emit RegistrationRejected(r.worker, why);
+                continue;
+            }
+            _register(r.worker);
+        }
+    }
+
+    /// @dev Registration is internal so the only route in is a verified signature
+    /// batch. A worker never sends a transaction. Deliberately free of reverts:
+    /// callers validate first, so one rejected entry cannot abort a batch.
+    function _register(address worker) internal {
         registered[worker] = true;
         workers.push(worker);
         emit Registered(worker);
